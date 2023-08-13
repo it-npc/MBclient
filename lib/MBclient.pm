@@ -55,6 +55,7 @@ use constant WRITE_SINGLE_COIL                           => 0x05;
 use constant WRITE_SINGLE_REGISTER                       => 0x06;
 use constant WRITE_MULTIPLE_REGISTERS                    => 0x10;
 use constant MODBUS_ENCAPSULATED_INTERFACE               => 0x2B;
+use constant NPC21                                       => 107; # user-defined fn
 ## Modbus except code
 use constant EXP_ILLEGAL_FUNCTION                        => 0x01;
 use constant EXP_DATA_ADDRESS                            => 0x02;
@@ -463,6 +464,40 @@ sub write_multiple_registers {
   # check regs write
   return ($rx_reg_addr == $reg_addr) ? 1 : undef;
 }
+
+##
+## Modbus function NPC21 (107 = 0x6b).
+## User-defined function for NPC21 project
+##   npc21(tag, data)
+## sends {tag, L, data, pad} where L=length(data)
+## length(data) <= (MODBUS_MAX_PDU_LENGTH-3 = 250)
+## (length(data) + length(pad)) == 250
+## receives {tag, L1, data1, pad1} where L1=length(data1)
+##   return $data1 if write/read success
+##          or undef if any error
+
+sub npc21 {
+  my $self          = shift;
+  my $tag           = shift;
+  my $data          = shift;
+  return undef if length($data) > 253 - 3; # 3 = function, tag, len
+  my $body = pack("CC", $tag, bytes::length($data)) . pack("a250", $data);
+  my $tx_buffer = $self->_mbus_frame(NPC21, $body);
+  # send request
+  my $s_send = $self->_send_mbus($tx_buffer);
+  # check error
+  return undef unless ($s_send);
+  # receive
+  my $f_body = $self->_recv_mbus();
+  # check error
+  return undef unless ($f_body);
+  # register extract
+  my ($rtag, $len) = unpack 'CC', $f_body;
+  $rtag == $tag or warn "received tag $rtag does not match sent tag $tag"
+      if ($self->{debug});
+  return substr($f_body, 2, $len);  # don't expose PAD1 to the caller
+}
+
 
 # Build modbus frame.
 #   _mbus_frame(function code, body)

@@ -30,6 +30,7 @@ use Exporter;
              MB_NO_ERR MB_RESOLVE_ERR MB_CONNECT_ERR MB_SEND_ERR
              MB_RECV_ERR MB_TIMEOUT_ERR MB_FRAME_ERR MB_EXCEPT_ERR);
 use Socket;
+use Socket6;
 use bytes;
 
 our $VERSION = '1.58';
@@ -143,6 +144,7 @@ sub host {
   return $self->{HOST} unless defined $hostname;
   # if host is IPv4 address or valid URL
   if (($hostname =~ m/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/) or
+      ($hostname =~ m/^([\da-f]{1,4}:{1,2})+[\da-f]{1,4}(%\w+)?$/) or
       ($hostname =~ m/^[a-z][a-z0-9\.\-]+$/)) {
     $self->{HOST} = $hostname;
   }
@@ -222,24 +224,29 @@ sub open {
   print 'call open()'."\n" if ($self->{debug});
   # restart TCP if already open
   $self->close if ($self->is_open);
-  # name resolve
-  my $ad_ip = inet_aton($self->{HOST});
-  unless($ad_ip) {
+  $self->{sock} = undef;
+  # man Socket6
+  my @res = getaddrinfo($self->{HOST}, $self->{PORT}, AF_UNSPEC, SOCK_STREAM);
+  if (@res == 1) {
     $self->{LAST_ERROR} = MB_RESOLVE_ERR;
     print 'IP resolve error'."\n" if ($self->{debug});
     return undef;
   }
-  # set socket
-  socket($self->{sock}, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
-  my $connect_ok = connect($self->{sock}, sockaddr_in($self->{PORT}, $ad_ip));
-  if ($connect_ok) {
-    return 1;
-  } else {
-    $self->{sock} = undef;
+  for ( ; @res >= 5; splice(@res, 0, 5)) {
+    my ($family, $socktype, $proto, $saddr, $canonname) = @res;
+    if ($self->{debug}) {
+      my ($host, $port) = getnameinfo($saddr, NI_NUMERICHOST | NI_NUMERICSERV);
+      print "Trying to connect to $host port $port...\n";
+    }
+    socket($self->{sock}, $family, $socktype, $proto) || next;
+    connect($self->{sock}, $saddr) && last;
+  }
+  if (!$self->{sock}) {
     $self->{LAST_ERROR} = MB_CONNECT_ERR;
     print 'TCP connect error'."\n" if ($self->{debug});
     return undef;
   }
+  return 1;
 };
 
 ##

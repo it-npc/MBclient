@@ -500,10 +500,18 @@ sub npc21 {
   return undef unless ($f_body);
   # register extract
   my ($rtag, $len) = unpack 'CC', $f_body;
-  $rtag == $tag or warn "received tag $rtag does not match sent tag $tag"
-      if ($self->{debug});
+  $rtag == $tag || warn "received tag $rtag != sent $tag" if $self->{debug};
+  $self->{NPC21_LAST_LEN} = $len;
   return substr($f_body, 2, $len);  # don't expose PAD1 to the caller
 }
+
+## Helper for MORE handling
+
+sub npc21_len {
+  my $self = shift;
+  return $self->{NPC21_LAST_LEN};
+}
+
 
 
 # Build modbus frame.

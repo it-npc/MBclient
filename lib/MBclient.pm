@@ -486,7 +486,7 @@ sub write_multiple_registers {
 sub npc21 {
   my $self          = shift;
   my $tag           = shift;
-  my $data          = shift;
+  my $data          = shift // "";  # may be omitted
   return undef if length($data) > 253 - 3; # 3 = function, tag, len
   my $body = pack("CC", $tag, bytes::length($data)) . pack("a250", $data);
   my $tx_buffer = $self->_mbus_frame(NPC21, $body);
